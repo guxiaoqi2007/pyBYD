@@ -55,14 +55,31 @@ def build_inner_base(
     if now_ms is None:
         now_ms = int(time.time() * 1000)
 
-    inner: dict[str, str] = {
-        "deviceType": config.device.device_type,
-        "imeiMD5": config.device.imei_md5,
-        "networkType": config.device.network_type,
-        "random": secrets.token_hex(16).upper(),
-        "timeStamp": str(now_ms),
-        "version": config.app_inner_version,
-    }
+    if config.is_cn:
+        inner: dict[str, str] = {
+            "deviceName": f"{config.device.mobile_brand}{config.device.mobile_model}",
+            "deviceType": config.device.device_type,
+            "imeiMD5": config.device.imei_md5,
+            "mobileBrand": config.device.mobile_brand,
+            "mobileModel": config.device.mobile_model,
+            "networkOperator": config.network_operator,
+            "networkType": config.device.network_type,
+            "osType": "Android",
+            "osVersion": config.device.os_version,
+            "random": secrets.token_hex(16).upper(),
+            "softType": config.soft_type,
+            "timeStamp": str(now_ms),
+            "version": config.cn_app_inner_version,
+        }
+    else:
+        inner = {
+            "deviceType": config.device.device_type,
+            "imeiMD5": config.device.imei_md5,
+            "networkType": config.device.network_type,
+            "random": secrets.token_hex(16).upper(),
+            "timeStamp": str(now_ms),
+            "version": config.app_inner_version,
+        }
     if vin:
         inner["vin"] = str(vin)
     if request_serial:

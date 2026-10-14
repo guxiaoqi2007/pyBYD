@@ -1,7 +1,8 @@
 """Login endpoint.
 
-Endpoint:
-  - /app/account/login
+Endpoints:
+  - Overseas: /app/account/login
+  - CN:       /app/auth/login
 """
 
 from __future__ import annotations
@@ -168,5 +169,127 @@ def parse_login_response(
         user_id=str(token["userId"]),
         sign_token=str(token["signToken"]),
         encry_token=str(token["encryToken"]),
+        raw=token,
+    )
+
+def build_cn_login_request(config: BydConfig, now_ms: int) -> dict[str, Any]:
+    """Build the outer payload for the CN login endpoint (/app/auth/login)."""
+    random_hex = secrets.token_hex(16).upper()
+    req_timestamp = str(now_ms)
+    login_key = pwd_login_key(config.password)
+
+    inner: dict[str, Any] = {
+        "appInnerVersion": config.cn_app_inner_version,
+        "appVersion": config.cn_app_version,
+        "bluetoothMac": "",
+        "city": "",
+        "configVersion": "10000",
+        "deviceType": config.device.device_type,
+        "devicename": f"{config.device.mobile_brand}{config.device.mobile_model}",
+        "imeiMD5": config.device.imei_md5,
+        "isAuto": "0",
+        "latitude": "",
+        "longitude": "",
+        "mobileBrand": config.device.mobile_brand,
+        "mobileModel": config.device.mobile_model,
+        "networkOperator": config.network_operator,
+        "networkType": config.device.network_type,
+        "osType": "Android",
+        "osVersion": config.device.os_type,
+        "random": random_hex,
+        "softType": config.soft_type,
+        "timeStamp": req_timestamp,
+    }
+
+    encry_data = aes_encrypt_hex(
+        json.dumps(inner, separators=(",", ":"), ensure_ascii=False),
+        login_key,
+    )
+
+    sign_fields: dict[str, Any] = {
+        **inner,
+        "appChannel": config.app_channel,
+        "identifier": config.username,
+        "loginType": 0,
+        "reqTimestamp": req_timestamp,
+        "targetBrand": config.target_brand,
+    }
+    sign = sha1_mixed(build_sign_string(sign_fields, md5_hex(config.password)))
+
+    outer: dict[str, Any] = {
+        "appChannel": config.app_channel,
+        "encryData": encry_data,
+        "identifier": config.username,
+        "imeiMD5": config.device.imei_md5,
+        "isAuto": "0",
+        "loginType": 0,
+        "reqTimestamp": req_timestamp,
+        "sign": sign,
+        "targetBrand": config.target_brand,
+    }
+
+    return outer
+
+
+def parse_cn_login_response(
+    outer_response: dict[str, Any],
+    password: str,
+    config: BydConfig,
+) -> AuthToken:
+    """Parse CN login response and extract the auth token.
+
+    CN tokens use ``superId`` as the primary user ID, with brand-specific
+    user IDs in ``superBindRelationDtoMap[targetBrand].userId``.
+    ``encryToken`` may appear as ``encryptToken``.
+    """
+    if str(outer_response.get("code")) != "0":
+        raise BydAuthenticationError(
+            f"Login failed: code={outer_response.get('code')} message={outer_response.get('message', '')}",
+            code=str(outer_response.get("code", "")),
+            endpoint="/app/auth/login",
+        )
+
+    respond_data = outer_response.get("respondData")
+    if not respond_data:
+        raise BydAuthenticationError(
+            "Login response missing respondData",
+            endpoint="/app/auth/login",
+        )
+
+    plaintext = aes_decrypt_utf8(respond_data, pwd_login_key(password))
+    inner = json.loads(plaintext)
+    _logger.debug("HTTP decoded endpoint=/app/auth/login payload=%s", redact_for_log(inner))
+    token = inner.get("token") if isinstance(inner, dict) else None
+
+    if not token or not token.get("signToken"):
+        raise BydAuthenticationError(
+            "Login response missing token fields",
+            endpoint="/app/auth/login",
+        )
+
+    sign_token = str(token["signToken"])
+    encry_token = str(token.get("encryToken") or token.get("encryptToken") or "")
+    super_id = str(token.get("superId") or "")
+
+    brand_map = token.get("superBindRelationDtoMap")
+    brand_user_id = ""
+    if isinstance(brand_map, dict) and config.target_brand in brand_map:
+        brand_entry = brand_map[config.target_brand]
+        if isinstance(brand_entry, dict):
+            brand_user_id = str(brand_entry.get("userId") or "")
+
+    user_id = brand_user_id or super_id
+
+    if not user_id or not encry_token:
+        raise BydAuthenticationError(
+            "Login response missing token fields",
+            endpoint="/app/auth/login",
+        )
+
+    return AuthToken(
+        user_id=user_id,
+        sign_token=sign_token,
+        encry_token=encry_token,
+        super_id=super_id or None,
         raw=token,
     )
