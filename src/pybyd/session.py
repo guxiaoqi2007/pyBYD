@@ -38,6 +38,7 @@ class Session(BaseModel):
     user_id: str
     sign_token: str
     encry_token: str
+    super_id: str | None = None
     created_at: float = Field(default_factory=time.monotonic)
     ttl: float = 12 * 3600
 

@@ -64,16 +64,27 @@ def _parse_broker(raw_broker: str) -> tuple[str, int]:
     return value, 8883
 
 
+_CN_BROKER_FIELDS: dict[str, str] = {
+    "1": "dynastyEmqBroker",
+    "2": "oceanEmqBroker",
+    "3": "denzaEmqBroker",
+    "4": "yangwangEmqBroker",
+    "5": "fangchengbaoEmqBroker",
+}
+
+
 def _build_client_id(config: BydConfig) -> str:
+    prefix = "dynasty" if config.is_cn else "oversea"
     imei_md5 = (config.device.imei_md5 or "").strip().upper()
     if imei_md5 and set(imei_md5) != {"0"}:
-        return f"oversea_{imei_md5}"
-    return f"oversea_{md5_hex(config.device.imei)}"
+        return f"{prefix}_{imei_md5}"
+    return f"{prefix}_{md5_hex(config.device.imei)}"
 
 
-def _build_mqtt_password(session: Session, client_id: str, ts_seconds: int) -> str:
+def _build_mqtt_password(session: Session, client_id: str, ts_seconds: int, *, is_cn: bool = False) -> str:
     ts_text = str(ts_seconds)
-    base = f"{session.sign_token}{client_id}{session.user_id}{ts_text}"
+    uid = (session.super_id or session.user_id) if is_cn else session.user_id
+    base = f"{session.sign_token}{client_id}{uid}{ts_text}"
     return f"{ts_text}{md5_hex(base)}"
 
 
@@ -94,9 +105,13 @@ async def _fetch_emq_broker(
     if not isinstance(decoded, dict):
         raise BydError("Broker lookup response inner payload is not an object")
 
-    broker = decoded.get("emqBorker") or decoded.get("emqBroker")
+    if config.is_cn:
+        broker_field = _CN_BROKER_FIELDS.get(config.target_brand, "dynastyEmqBroker")
+        broker = decoded.get(broker_field)
+    else:
+        broker = decoded.get("emqBorker") or decoded.get("emqBroker")
     if not isinstance(broker, str) or not broker.strip():
-        raise BydError("Broker lookup response missing emqBorker/emqBroker")
+        raise BydError("Broker lookup response missing broker field")
     return broker.strip()
 
 
@@ -110,14 +125,20 @@ async def fetch_mqtt_bootstrap(
     broker_host, broker_port = _parse_broker(broker)
     client_id = _build_client_id(config)
     now_seconds = int(time.time())
+    if config.is_cn:
+        mqtt_user_id = session.super_id or session.user_id
+        topic_prefix = "dynasty/res"
+    else:
+        mqtt_user_id = session.user_id
+        topic_prefix = "oversea/res"
     return MqttBootstrap(
-        user_id=session.user_id,
+        user_id=mqtt_user_id,
         broker_host=broker_host,
         broker_port=broker_port,
-        topic=f"oversea/res/{session.user_id}",
+        topic=f"{topic_prefix}/{mqtt_user_id}",
         client_id=client_id,
-        username=session.user_id,
-        password=_build_mqtt_password(session, client_id, now_seconds),
+        username=mqtt_user_id,
+        password=_build_mqtt_password(session, client_id, now_seconds, is_cn=config.is_cn),
     )
 
 

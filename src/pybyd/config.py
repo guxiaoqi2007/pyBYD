@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pybyd._crypto.hashing import md5_hex
 
 _ZERO_IMEI_MD5 = "00000000000000000000000000000000"
+_CN_URL_RE = re.compile(r"cn\.byd\.auto", re.IGNORECASE)
 
 
 def _env_bool(value: str | None, default: bool) -> bool:
@@ -129,6 +131,17 @@ class BydConfig(BaseModel):
     mqtt_keepalive: int = 120
     mqtt_timeout: float = 10.0
     device: DeviceProfile = Field(default_factory=DeviceProfile)
+    app_channel: str = "99"
+    cn_app_inner_version: str = "502"
+    cn_app_version: str = "9.10.2"
+    target_brand: str = "1"
+    vehicle_brand: str = "1"
+    network_operator: str = "无"
+
+    @property
+    def is_cn(self) -> bool:
+        """Whether the base URL points to a CN (China) endpoint."""
+        return bool(_CN_URL_RE.search(self.base_url))
 
     @model_validator(mode="after")
     def _derive_imei_md5(self) -> BydConfig:
@@ -202,6 +215,12 @@ class BydConfig(BaseModel):
             "BYD_IS_AUTO": "is_auto",
             "BYD_IDENTIFIER_TYPE": "identifier_type",
             "BYD_CONTROL_PIN": "control_pin",
+            "BYD_APP_CHANNEL": "app_channel",
+            "BYD_CN_APP_INNER_VERSION": "cn_app_inner_version",
+            "BYD_CN_APP_VERSION": "cn_app_version",
+            "BYD_TARGET_BRAND": "target_brand",
+            "BYD_VEHICLE_BRAND": "vehicle_brand",
+            "BYD_NETWORK_OPERATOR": "network_operator",
         }
         config_kwargs: dict[str, Any] = {"device": device}
         for env_key, field_name in _ENV_CONFIG_MAP.items():

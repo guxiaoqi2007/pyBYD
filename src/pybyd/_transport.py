@@ -65,6 +65,11 @@ class SecureTransport:
             "user-agent": USER_AGENT,
         }
 
+        if self._config.is_cn:
+            headers["version"] = self._config.cn_app_inner_version
+            headers["platform"] = "ANDROID"
+            headers["BrandFlag"] = "dynasty"
+
         url = f"{self._config.base_url}{endpoint}"
         body = json.dumps({"request": encoded})
 
