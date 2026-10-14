@@ -43,3 +43,8 @@ def compute_checkcode(payload: dict[str, Any]) -> str:
     json_str = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
     md5 = hashlib.md5(json_str.encode("utf-8")).hexdigest()
     return md5[24:32] + md5[8:16] + md5[16:24] + md5[0:8]
+
+def compute_cn_checkcode(payload: dict[str, Any]) -> str:
+    """Compute CN checkcode: SHA-256 of compact JSON."""
+    json_str = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(json_str.encode("utf-8")).hexdigest()
